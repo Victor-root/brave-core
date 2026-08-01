@@ -17,6 +17,7 @@ import org.robolectric.annotation.Config;
 
 import org.chromium.base.BraveFeatureList;
 import org.chromium.base.BravePreferenceKeys;
+import org.chromium.base.ContextUtils;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Features.EnableFeatures;
@@ -78,5 +79,13 @@ public class BraveDynamicColorsTest {
     @Config(sdk = Build.VERSION_CODES.R)
     public void testIsDynamicColorsEnabled_belowAndroidS_returnsFalse() {
         assertFalse(BraveDynamicColors.isDynamicColorsEnabled());
+    }
+
+    @Test
+    public void testHasSystemDynamicPalette_frameworkDefaultPalette_returnsFalse() {
+        // No theme engine overlays the framework palette in the test environment, which is what a
+        // device that never installs a wallpaper derived palette looks like.
+        assertFalse(
+                BraveDynamicColors.hasSystemDynamicPalette(ContextUtils.getApplicationContext()));
     }
 }

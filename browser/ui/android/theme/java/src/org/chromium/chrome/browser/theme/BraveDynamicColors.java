@@ -6,7 +6,16 @@
 package org.chromium.chrome.browser.theme;
 
 import android.app.Activity;
+import android.app.WallpaperColors;
+import android.app.WallpaperManager;
+import android.content.Context;
+import android.content.res.Resources;
 import android.os.Build;
+
+import androidx.annotation.ChecksSdkIntAtLeast;
+import androidx.annotation.ColorInt;
+import androidx.annotation.RequiresApi;
+import androidx.annotation.VisibleForTesting;
 
 import com.google.android.material.color.DynamicColors;
 import com.google.android.material.color.DynamicColorsOptions;
@@ -14,6 +23,7 @@ import com.google.android.material.color.DynamicColorsOptions;
 import org.chromium.base.BraveFeatureList;
 import org.chromium.base.BravePreferenceKeys;
 import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.chrome.browser.flags.ChromeFeatureMap;
 import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;
 import org.chromium.components.cached_flags.CachedFlag;
@@ -53,6 +63,7 @@ public final class BraveDynamicColors {
      * <p>This requires dynamic colors to be available and the user preference to be enabled. The
      * preference defaults to enabled when it has not been set.
      */
+    @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.S)
     public static boolean isDynamicColorsEnabled() {
         return isDynamicColorsAvailable() && isDynamicColorsUserEnabled();
     }
@@ -73,7 +84,15 @@ public final class BraveDynamicColors {
             return;
         }
 
-        DynamicColors.applyToActivityIfAvailable(activity);
+        Integer wallpaperColor = getWallpaperFallbackColor(activity);
+        if (wallpaperColor == null) {
+            DynamicColors.applyToActivityIfAvailable(activity);
+            return;
+        }
+
+        DynamicColors.applyToActivityIfAvailable(
+                activity,
+                new DynamicColorsOptions.Builder().setContentBasedSource(wallpaperColor).build());
     }
 
     /**
@@ -89,5 +108,43 @@ public final class BraveDynamicColors {
         }
 
         DynamicColors.applyToActivityIfAvailable(activity, dynamicColorsOptions);
+    }
+
+    /**
+     * Returns the color to seed the palette with, or null to let the system palette be used as is.
+     *
+     * <p>Since Android 13 Material considers dynamic colors available on every device, but some
+     * vendor skins never install the wallpaper derived palette the platform defines, which leaves
+     * the interface on the framework accent whatever the wallpaper is. Those devices still let the
+     * platform extract the wallpaper colors, so they are used as a seed instead.
+     */
+    @ColorInt
+    @RequiresApi(Build.VERSION_CODES.S)
+    private static @Nullable Integer getWallpaperFallbackColor(Activity activity) {
+        if (hasSystemDynamicPalette(activity)) {
+            return null;
+        }
+
+        // Reading these colors requires no permission and never touches the wallpaper image: the
+        // platform extracts them when the wallpaper is set.
+        WallpaperColors wallpaperColors =
+                WallpaperManager.getInstance(activity)
+                        .getWallpaperColors(WallpaperManager.FLAG_SYSTEM);
+        return wallpaperColors == null ? null : wallpaperColors.getPrimaryColor().toArgb();
+    }
+
+    /**
+     * Returns whether the system installed a dynamic palette on top of the framework defaults.
+     *
+     * <p>{@link Resources#getSystem()} only resolves the framework resources and the overlays baked
+     * in at boot, while a context also resolves the palette overlay that the system theme engine
+     * installs for the current user. Both resolving to the same accent means that no such overlay
+     * is in place.
+     */
+    @RequiresApi(Build.VERSION_CODES.S)
+    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
+    static boolean hasSystemDynamicPalette(Context context) {
+        return context.getColor(android.R.color.system_accent1_500)
+                != Resources.getSystem().getColor(android.R.color.system_accent1_500, null);
     }
 }
